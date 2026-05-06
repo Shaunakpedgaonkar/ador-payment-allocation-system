@@ -14,6 +14,14 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
+// Prevent all HTTP caching so every API response reflects current DB state
+app.use((_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.use("/upload", uploadRouter);
