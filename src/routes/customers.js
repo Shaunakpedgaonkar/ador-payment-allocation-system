@@ -23,6 +23,9 @@ router.get("/", async (_req, res, next) => {
 router.get("/ledger", async (_req, res, next) => {
   try {
     const customers = await prisma.customer.findMany({
+      where: {
+        transactions: { some: {} },
+      },
       include: {
         transactions: {
           include: {
