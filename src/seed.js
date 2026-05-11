@@ -9,10 +9,19 @@ async function main() {
   await prisma.transaction.deleteMany();
   await prisma.customer.deleteMany();
 
-  // ── Customers (ADOR industrial ecosystem) ────────────────────────────────────
-  const [awl, hpcl, lt, tata, bhel] = await Promise.all([
+  // Reset SQLite auto-increment counters so IDs start from 1 every time
+  try {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM sqlite_sequence WHERE name IN ('Customer','Invoice','Transaction','InvoicePayment','ActivityLog','Receipt')`
+    );
+  } catch (_) {
+    // sqlite_sequence only exists after first-ever insert — safe to ignore
+  }
+
+  // ── Customers ────────────────────────────────────────────────────────────────
+  const [reliance, hpcl, lt, tata, bhel] = await Promise.all([
     prisma.customer.create({
-      data: { name: "Ador Welding Ltd", aliases: "AWL,Ador Weld,Ador Welding" },
+      data: { name: "Reliance Industries Ltd", aliases: "RELIANCE,Reliance Ind,RIL,Reliance Inds" },
     }),
     prisma.customer.create({
       data: { name: "Hindustan Petroleum Corp", aliases: "HPCL,HP Corp,Hindustan Petro" },
@@ -29,24 +38,22 @@ async function main() {
   ]);
 
   // ── Invoices ─────────────────────────────────────────────────────────────────
-  // balanceRemaining is set to reflect pre-seeded payment state
-  // Current demo date: 2026-04-28
-  // createdAt drives aging calculation in the UI — set to spread across buckets:
+  // createdAt drives aging calculation in the UI — spread across buckets:
   //   < 1 month  → INV-2410 (Apr 10)
   //   1–2 months → INV-2406 (Mar 15), INV-2408 (Mar 25)
   //   2–3 months → INV-2402 (Feb 10), INV-2404 (Feb 20)
   //   3+ months  → INV-2401 (Jan 15), INV-2403 (Jan 05), INV-2407 (Jan 20),
   //                INV-2405 (Dec 01), INV-2409 (Nov 20)
   const [
-    inv2401, inv2402,             // Ador Welding
+    inv2401, inv2402,             // Reliance Industries
     inv2403, inv2404,             // HPCL
     inv2405, inv2406,             // L&T
     inv2407, inv2408,             // Tata Steel
     inv2409, inv2410,             // BHEL
   ] = await Promise.all([
-    // Ador Welding
-    prisma.invoice.create({ data: { customerId: awl.id,  invoiceNumber: "INV-2401", amount: 120000, balanceRemaining:  40000, dueDate: new Date("2026-03-15"), status: "PARTIAL", createdAt: new Date("2026-01-15") } }),
-    prisma.invoice.create({ data: { customerId: awl.id,  invoiceNumber: "INV-2402", amount: 250000, balanceRemaining: 250000, dueDate: new Date("2026-04-30"), status: "OPEN",    createdAt: new Date("2026-02-10") } }),
+    // Reliance Industries
+    prisma.invoice.create({ data: { customerId: reliance.id, invoiceNumber: "INV-2401", amount: 120000, balanceRemaining:  40000, dueDate: new Date("2026-03-15"), status: "PARTIAL", createdAt: new Date("2026-01-15") } }),
+    prisma.invoice.create({ data: { customerId: reliance.id, invoiceNumber: "INV-2402", amount: 250000, balanceRemaining: 250000, dueDate: new Date("2026-04-30"), status: "OPEN",    createdAt: new Date("2026-02-10") } }),
     // HPCL
     prisma.invoice.create({ data: { customerId: hpcl.id, invoiceNumber: "INV-2403", amount:  85000, balanceRemaining:      0, dueDate: new Date("2026-02-28"), status: "PAID",    createdAt: new Date("2026-01-05") } }),
     prisma.invoice.create({ data: { customerId: hpcl.id, invoiceNumber: "INV-2404", amount: 175000, balanceRemaining:  75000, dueDate: new Date("2026-04-15"), status: "PARTIAL", createdAt: new Date("2026-02-20") } }),
@@ -67,10 +74,10 @@ async function main() {
 
   // 6 RECONCILED — money received and allocated to invoices
   const txn1 = await prisma.transaction.create({ data: {
-    txnDate: new Date("2026-01-20"), amount: 80000,
-    narration: "NEFT CR AWL MUMBAI 20012026",
-    reference: "NEFT2601001", branch: "Mumbai HQ",
-    customerId: awl.id, matchConfidence: "HIGH", matchType: "AUTO", status: "RECONCILED",
+    txnDate: new Date("2026-01-20"), amount: 120000,
+    narration: "RTGS CR RELIANCE IND LTD MUMBAI INV2401",
+    reference: "RTGS2601001", branch: "Mumbai HQ",
+    customerId: reliance.id, matchConfidence: "HIGH", matchType: "AUTO", status: "RECONCILED",
   }});
 
   const txn2 = await prisma.transaction.create({ data: {
@@ -110,10 +117,10 @@ async function main() {
 
   // 2 MATCHED — money received, customer identified, awaiting invoice allocation
   const txn7 = await prisma.transaction.create({ data: {
-    txnDate: new Date("2026-04-02"), amount: 40000,
-    narration: "NEFT AWL MUMBAI ADVANCE TRF 04APR",
-    reference: "NEFT2604002", branch: "Mumbai HQ",
-    customerId: awl.id, matchConfidence: "HIGH", matchType: "AUTO", status: "MATCHED",
+    txnDate: new Date("2026-04-02"), amount: 500000,
+    narration: "RTGS RELIANCE INDUSTRIES LTD MUMBAI APR PYMT",
+    reference: "RTGS2604002", branch: "Mumbai HQ",
+    customerId: reliance.id, matchConfidence: "HIGH", matchType: "AUTO", status: "MATCHED",
   }});
 
   const txn8 = await prisma.transaction.create({ data: {
@@ -140,7 +147,7 @@ async function main() {
 
   // ── Invoice Payments (links RECONCILED txns → invoices) ──────────────────────
   await Promise.all([
-    prisma.invoicePayment.create({ data: { transactionId: txn1.id, invoiceId: inv2401.id, amountApplied:  80000 } }),
+    prisma.invoicePayment.create({ data: { transactionId: txn1.id, invoiceId: inv2401.id, amountApplied: 120000 } }),
     prisma.invoicePayment.create({ data: { transactionId: txn2.id, invoiceId: inv2403.id, amountApplied:  85000 } }),
     prisma.invoicePayment.create({ data: { transactionId: txn3.id, invoiceId: inv2404.id, amountApplied: 100000 } }),
     prisma.invoicePayment.create({ data: { transactionId: txn4.id, invoiceId: inv2405.id, amountApplied: 350000 } }),
@@ -150,30 +157,30 @@ async function main() {
 
   // ── Activity Logs ─────────────────────────────────────────────────────────────
   const logs = [
-    { txn: txn1,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Mumbai HQ" },
-    { txn: txn1,  action: "MATCHED",     desc: "Auto-matched to Ador Welding Ltd (HIGH confidence)" },
-    { txn: txn1,  action: "RECONCILED",  desc: "Reconciled ₹80,000 → INV-2401 (partial payment)" },
-    { txn: txn2,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Chennai Branch" },
-    { txn: txn2,  action: "MATCHED",     desc: "Auto-matched to Hindustan Petroleum Corp (HIGH confidence)" },
-    { txn: txn2,  action: "RECONCILED",  desc: "Reconciled ₹85,000 → INV-2403 (full settlement)" },
-    { txn: txn3,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Chennai Branch" },
-    { txn: txn3,  action: "MATCHED",     desc: "Auto-matched to Hindustan Petroleum Corp (HIGH confidence)" },
-    { txn: txn3,  action: "RECONCILED",  desc: "Reconciled ₹1,00,000 → INV-2404 (partial payment)" },
-    { txn: txn4,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Delhi NCR" },
-    { txn: txn4,  action: "MATCHED",     desc: "Auto-matched to Larsen & Toubro Ltd (HIGH confidence)" },
-    { txn: txn4,  action: "RECONCILED",  desc: "Reconciled ₹3,50,000 → INV-2405 (full settlement)" },
-    { txn: txn5,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Mumbai HQ" },
-    { txn: txn5,  action: "MATCHED",     desc: "Auto-matched to Tata Steel Ltd (MEDIUM confidence)" },
-    { txn: txn5,  action: "RECONCILED",  desc: "Reconciled ₹45,000 → INV-2407 (partial payment)" },
-    { txn: txn6,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Mumbai HQ" },
-    { txn: txn6,  action: "MATCHED",     desc: "Auto-matched to Bharat Heavy Electricals (HIGH confidence)" },
-    { txn: txn6,  action: "RECONCILED",  desc: "Reconciled ₹2,80,000 → INV-2409 (full settlement)" },
-    { txn: txn7,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Mumbai HQ" },
-    { txn: txn7,  action: "MATCHED",     desc: "Auto-matched to Ador Welding Ltd (HIGH confidence)" },
-    { txn: txn8,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Delhi NCR" },
-    { txn: txn8,  action: "MATCHED",     desc: "Auto-matched to Larsen & Toubro Ltd (MEDIUM confidence)" },
-    { txn: txn9,  action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Delhi NCR" },
-    { txn: txn10, action: "UPLOADED",    desc: "Uploaded via bank statement CSV · Mumbai HQ" },
+    { txn: txn1,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Mumbai HQ" },
+    { txn: txn1,  action: "MATCHED",    desc: "Auto-matched to Reliance Industries Ltd (HIGH confidence)" },
+    { txn: txn1,  action: "RECONCILED", desc: "Reconciled ₹1,20,000 → INV-2401 (full settlement)" },
+    { txn: txn2,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Chennai Branch" },
+    { txn: txn2,  action: "MATCHED",    desc: "Auto-matched to Hindustan Petroleum Corp (HIGH confidence)" },
+    { txn: txn2,  action: "RECONCILED", desc: "Reconciled ₹85,000 → INV-2403 (full settlement)" },
+    { txn: txn3,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Chennai Branch" },
+    { txn: txn3,  action: "MATCHED",    desc: "Auto-matched to Hindustan Petroleum Corp (HIGH confidence)" },
+    { txn: txn3,  action: "RECONCILED", desc: "Reconciled ₹1,00,000 → INV-2404 (partial payment)" },
+    { txn: txn4,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Delhi NCR" },
+    { txn: txn4,  action: "MATCHED",    desc: "Auto-matched to Larsen & Toubro Ltd (HIGH confidence)" },
+    { txn: txn4,  action: "RECONCILED", desc: "Reconciled ₹3,50,000 → INV-2405 (full settlement)" },
+    { txn: txn5,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Mumbai HQ" },
+    { txn: txn5,  action: "MATCHED",    desc: "Auto-matched to Tata Steel Ltd (MEDIUM confidence)" },
+    { txn: txn5,  action: "RECONCILED", desc: "Reconciled ₹45,000 → INV-2407 (partial payment)" },
+    { txn: txn6,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Mumbai HQ" },
+    { txn: txn6,  action: "MATCHED",    desc: "Auto-matched to Bharat Heavy Electricals (HIGH confidence)" },
+    { txn: txn6,  action: "RECONCILED", desc: "Reconciled ₹2,80,000 → INV-2409 (full settlement)" },
+    { txn: txn7,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Mumbai HQ" },
+    { txn: txn7,  action: "MATCHED",    desc: "Auto-matched to Reliance Industries Ltd (HIGH confidence)" },
+    { txn: txn8,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Delhi NCR" },
+    { txn: txn8,  action: "MATCHED",    desc: "Auto-matched to Larsen & Toubro Ltd (MEDIUM confidence)" },
+    { txn: txn9,  action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Delhi NCR" },
+    { txn: txn10, action: "UPLOADED",   desc: "Uploaded via bank statement CSV · Mumbai HQ" },
   ];
 
   for (const e of logs) {
@@ -193,7 +200,7 @@ async function main() {
   ]);
 
   console.log(
-    "Seeded ADOR demo data: 5 customers · 10 invoices · 10 transactions " +
+    "Seeded: 5 customers · 10 invoices · 10 transactions " +
     "(6 reconciled, 2 matched, 2 unmatched) · 6 receipts"
   );
 }
