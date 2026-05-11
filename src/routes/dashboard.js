@@ -12,7 +12,7 @@ router.get("/stats", async (_req, res, next) => {
     const [
       total, unmatched, matched, reconciled, customerCount,
       txnAmountAgg, reconciledAgg, openInvoices, allInvoices,
-      recentLogs,
+      recentLogs, highPriorityCustomers,
     ] = await Promise.all([
       prisma.transaction.count(),
       prisma.transaction.count({ where: { status: "UNMATCHED" } }),
@@ -32,6 +32,13 @@ router.get("/stats", async (_req, res, next) => {
         take: 5,
         include: {
           transaction: { include: { customer: true } },
+        },
+      }),
+      prisma.customer.count({
+        where: {
+          invoices: {
+            some: { status: { not: "PAID" }, dueDate: { lt: d60 } },
+          },
         },
       }),
     ]);
@@ -72,6 +79,7 @@ router.get("/stats", async (_req, res, next) => {
       outstandingReceivables: outstanding,
       totalReceivables,
       openInvoices: openInvoices.length,
+      highPriorityCustomers,
       aging,
       recentActivity,
     });
